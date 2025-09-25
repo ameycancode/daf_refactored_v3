@@ -1,0 +1,4 @@
+boto3>=1.26.137
+sagemaker>=2.156.0
+pandas>=1.5.3
+numpy>=1.24.3

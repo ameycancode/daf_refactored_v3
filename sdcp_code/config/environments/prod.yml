@@ -1,0 +1,57 @@
+# Environment Configuration - config/environments/prod.yml
+environment: prod
+aws_account_id: "{{ AWS_ACCOUNT_ID }}"
+aws_region: us-west-2
+
+# S3 Configuration
+s3:
+  data_bucket: sdcp-prod-sagemaker-energy-forecasting-data
+  model_bucket: sdcp-prod-sagemaker-energy-forecasting-models
+  prefix: sdcp_modeling
+ 
+# IAM Roles
+iam:
+  sagemaker_role: sdcp-prod-sagemaker-energy-forecast-ds-elevated-role
+  lambda_role: sdcp-prod-sagemaker-energy-forecasting-lambda-role
+
+# Resource Naming
+resources:
+  pipeline_name: energy-forecasting-mlops-prod
+  lambda_prefix: energy-forecasting-prod
+  step_functions_prefix: energy-forecasting-prod
+  ecr_prefix: energy
+
+# Container Configuration
+containers:
+  preprocessing:
+    environment: prod
+    debug_mode: false
+    log_level: WARNING
+  training:
+    environment: prod
+    debug_mode: false
+    log_level: WARNING
+
+# Testing Configuration
+testing:
+  default_profiles: ["RNN", "RN", "M", "S", "AGR", "L", "A6"]
+  timeout_minutes: 60
+  cleanup_after_test: false  # Don't cleanup in prod
+
+# Cost Optimization
+cost_optimization:
+  delete_endpoints_after_test: true
+  preserve_s3_data: true
+  endpoint_timeout_minutes: 30
+
+# Redshift Configuration
+redshift:
+  bi_schema: edp_bi
+  cluster_identifier: sdcp-edp-backend-prod
+  database: sdcp
+  db_user: ds_service_user
+  input_schema: edp_cust
+  input_table: caiso_sqmd
+  operational_schema: edp_forecasting
+  operational_table: dayahead_load_forecasts_sdcp
+  # data_reading_period_days: 365

@@ -1,0 +1,143 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_DEFAULT_REGION: us-west-2
+    IMAGE_TAG: latest
+    ECR_PREFIX: energy
+  # Add environment-specific variables that will be set by GitHub Actions
+  # These will be passed from the workflow:
+  # ENVIRONMENT: (dev/preprod/prod)
+  # AWS_ACCOUNT_ID: (from GitHub Variables)
+
+phases:
+  pre_build:
+    commands:
+      - echo "=== PRE-BUILD PHASE ==="
+      - echo "Environment: $ENVIRONMENT"
+      - echo "AWS Region: $AWS_DEFAULT_REGION"
+      - echo "Image Tag: $IMAGE_TAG"
+      - echo Logging in to Amazon ECR...
+      - aws --version
+     
+      # Use ACCOUNT_ID from environment if available, otherwise detect
+      - |
+        if [ -z "$AWS_ACCOUNT_ID" ]; then
+          export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "Detected Account ID: $ACCOUNT_ID"
+        else
+          export ACCOUNT_ID=$AWS_ACCOUNT_ID
+          echo "Using provided Account ID: $ACCOUNT_ID"
+        fi
+     
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+     
+      # Create ECR repositories if they don't exist
+      - |
+        for repo in energy-preprocessing energy-training energy-prediction; do
+          echo "Ensuring ECR repository exists: $repo"
+          aws ecr create-repository --repository-name $repo --region $AWS_DEFAULT_REGION 2>/dev/null || echo "Repository $repo already exists"
+        done
+
+  build:
+    commands:
+      - echo "=== BUILD PHASE ==="
+      - echo Build started on `date`
+      - echo Building container images...
+
+      - echo "=== GENERATING ENVIRONMENT-SPECIFIC CONFIGURATIONS ==="
+      - python sdcp_code/deployment/container_config_manager.py --environment $ENVIRONMENT --generate-configs
+     
+      # Build preprocessing container
+      - echo "Building preprocessing container for environment: $ENVIRONMENT"
+      - cd sdcp_code/containers/preprocessing
+      - docker build -t $ECR_PREFIX-preprocessing:$IMAGE_TAG .
+      - docker tag $ECR_PREFIX-preprocessing:$IMAGE_TAG $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-preprocessing:$IMAGE_TAG
+      - docker tag $ECR_PREFIX-preprocessing:$IMAGE_TAG $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-preprocessing:$ENVIRONMENT-$IMAGE_TAG
+      - echo "Pushing preprocessing container..."
+      - docker push $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-preprocessing:$IMAGE_TAG
+      - docker push $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-preprocessing:$ENVIRONMENT-$IMAGE_TAG
+      - cd ../../..
+     
+      # Build training container
+      - echo "Building training container for environment: $ENVIRONMENT"
+      - cd sdcp_code/containers/training
+      - docker build -t $ECR_PREFIX-training:$IMAGE_TAG .
+      - docker tag $ECR_PREFIX-training:$IMAGE_TAG $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-training:$IMAGE_TAG
+      - docker tag $ECR_PREFIX-training:$IMAGE_TAG $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-training:$ENVIRONMENT-$IMAGE_TAG
+      - echo "Pushing training container..."
+      - docker push $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-training:$IMAGE_TAG
+      - docker push $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-training:$ENVIRONMENT-$IMAGE_TAG
+      - cd ../../..
+     
+      # Build prediction container (if exists)
+      - |
+        if [ -d "sdcp_code/containers/prediction" ]; then
+          echo "Building prediction container for environment: $ENVIRONMENT"
+          cd sdcp_code/containers/prediction
+          docker build -t $ECR_PREFIX-prediction:$IMAGE_TAG .
+          docker tag $ECR_PREFIX-prediction:$IMAGE_TAG $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-prediction:$IMAGE_TAG
+          docker tag $ECR_PREFIX-prediction:$IMAGE_TAG $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-prediction:$ENVIRONMENT-$IMAGE_TAG
+          echo "Pushing prediction container..."
+          docker push $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-prediction:$IMAGE_TAG
+          docker push $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-prediction:$ENVIRONMENT-$IMAGE_TAG
+          cd ../../..
+        else
+          echo "Prediction container directory not found, skipping..."
+        fi
+
+  post_build:
+    commands:
+      - echo "=== POST-BUILD PHASE ==="
+      - echo Build completed on `date`
+      - echo "All container images built and pushed successfully for environment: $ENVIRONMENT"
+      - echo ""
+      - echo "=== IMAGE URIS ==="
+      - echo "Preprocessing: $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-preprocessing:$IMAGE_TAG"
+      - echo "Training: $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-training:$IMAGE_TAG"
+      - |
+        if [ -d "sdcp_code/containers/prediction" ]; then
+          echo "Prediction: $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-prediction:$IMAGE_TAG"
+        fi
+      - echo ""
+      - echo "=== ENVIRONMENT-SPECIFIC TAGS ==="
+      - echo "Preprocessing ($ENVIRONMENT): $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-preprocessing:$ENVIRONMENT-$IMAGE_TAG"
+      - echo "Training ($ENVIRONMENT): $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-training:$ENVIRONMENT-$IMAGE_TAG"
+      - |
+        if [ -d "sdcp_code/containers/prediction" ]; then
+          echo "Prediction ($ENVIRONMENT): $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_PREFIX-prediction:$ENVIRONMENT-$IMAGE_TAG"
+        fi
+     
+      # Create build summary
+      - |
+        cat > container-build-summary.json << EOF
+        {
+          "build_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "environment": "$ENVIRONMENT",
+          "account_id": "$ACCOUNT_ID",
+          "region": "$AWS_DEFAULT_REGION",
+          "image_tag": "$IMAGE_TAG",
+          "containers_built": [
+            {
+              "name": "energy-preprocessing",
+              "repository": "$ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/energy-preprocessing",
+              "tags": ["$IMAGE_TAG", "$ENVIRONMENT-$IMAGE_TAG"]
+            },
+            {
+              "name": "energy-training",
+              "repository": "$ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/energy-training",
+              "tags": ["$IMAGE_TAG", "$ENVIRONMENT-$IMAGE_TAG"]
+            }
+          ]
+        }
+        EOF
+     
+      - echo "=== BUILD SUMMARY CREATED ==="
+      - cat container-build-summary.json
+
+artifacts:
+  files:
+    - 'container-build-summary.json'
+    - 'sdcp_code/containers/preprocessing/src/config.json'
+    - 'sdcp_code/containers/training/src/config.json'
+  name: energy-forecasting-build-artifacts-$ENVIRONMENT-$(date +%Y%m%d)

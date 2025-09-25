@@ -1,0 +1,51 @@
+# =============================================================================
+# REUSABLE ACTION: AWS CREDENTIALS SETUP - .github/actions/setup-aws-credentials/action.yml
+# =============================================================================
+name: 'Setup AWS Credentials'
+description: 'Setup AWS credentials with OIDC and SageMaker role assumption'
+
+inputs:
+  environment:
+    description: 'Target environment (dev, preprod, prod)'
+    required: true
+  aws-region:
+    description: 'AWS region'
+    required: false
+    default: 'us-west-2'
+  role-session-name:
+    description: 'Role session name'
+    required: true
+  aws-account-id:
+    description: 'AWS Account ID'
+    required: true
+
+outputs:
+  role-arn:
+    description: 'The assumed role ARN'
+    value: ${{ steps.setup.outputs.role-arn }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Configure AWS credentials with OIDC
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ inputs.aws-account-id }}:role/sdcp-${{ inputs.environment }}-sagemaker-energy-forecasting-datascientist-role
+        role-session-name: ${{ inputs.role-session-name }}
+        aws-region: ${{ inputs.aws-region }}
+        mask-aws-account-id: true
+
+    - name: Verify AWS credentials
+      id: setup
+      shell: bash
+      run: |
+        echo "Verifying AWS credentials..."
+        aws sts get-caller-identity
+        
+        ROLE_ARN="arn:aws:iam::${{ inputs.aws-account-id }}:role/sdcp-${{ inputs.environment }}-sagemaker-energy-forecasting-datascientist-role"
+        echo "role-arn=$ROLE_ARN" >> $GITHUB_OUTPUT
+        
+        echo "✅ AWS credentials configured successfully"
+        echo "Environment: ${{ inputs.environment }}"
+        echo "Region: ${{ inputs.aws-region }}"
+        echo "Role ARN: $ROLE_ARN"

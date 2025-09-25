@@ -1,0 +1,50 @@
+# Requirements for Energy Forecasting Profile Predictor Lambda Function
+# Refactored version with Redshift integration and environment awareness
+
+# Core data processing libraries
+pandas>=1.5.0,<2.1.0
+numpy>=1.21.0,<1.25.0
+
+# AWS SDK and services
+boto3>=1.26.0
+botocore>=1.29.0
+
+# HTTP requests for weather/radiation APIs
+requests>=2.28.0
+urllib3>=1.26.0,<2.0.0
+
+# Date/time handling
+pytz>=2022.1
+
+# JSON handling (built-in, but specifying for clarity)
+# json - built-in module
+
+# Math and statistics (built-in, but enhanced with numpy)
+# math - built-in module
+# statistics - built-in module
+
+# String processing and I/O
+# io - built-in module
+# re - built-in module
+
+# System and OS utilities
+# os - built-in module
+# time - built-in module
+# logging - built-in module
+
+# Type hints
+typing-extensions>=4.0.0
+
+# Optional: For enhanced error handling and retries
+tenacity>=8.0.0
+
+# Note: Package size considerations for Lambda:
+# - pandas + numpy ≈ 80MB
+# - boto3 + dependencies ≈ 15MB  
+# - requests + dependencies ≈ 5MB
+# - Total estimated size: ~100MB (well within 250MB Lambda limit)
+#
+# For production optimization:
+# - Consider using Lambda Layers for pandas/numpy
+# - Use minimal pandas features to reduce memory footprint
+# - Implement package stripping for unused modules

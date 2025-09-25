@@ -1,0 +1,144 @@
+# =============================================================================
+# REUSABLE ACTION: VALIDATE ENVIRONMENT - .github/actions/validate-environment/action.yml
+# =============================================================================
+name: 'Validate Environment'
+description: 'Comprehensive environment validation for MLOps deployment'
+
+inputs:
+  environment:
+    description: 'Target environment'
+    required: true
+  validation-type:
+    description: 'Type of validation (pre-deployment, post-deployment, integration)'
+    required: true
+    default: 'pre-deployment'
+  aws-region:
+    description: 'AWS region'
+    required: false
+    default: 'us-west-2'
+
+outputs:
+  validation-status:
+    description: 'Overall validation status'
+    value: ${{ steps.validate.outputs.status }}
+  validation-report:
+    description: 'Path to validation report'
+    value: ${{ steps.validate.outputs.report-path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install boto3 botocore
+
+    - name: Run environment validation
+      id: validate
+      shell: bash
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        VALIDATION_TYPE: ${{ inputs.validation-type }}
+        AWS_REGION: ${{ inputs.aws-region }}
+      run: |
+        echo "Running $VALIDATION_TYPE validation for $ENVIRONMENT environment..."
+        
+        case "$VALIDATION_TYPE" in
+          "pre-deployment")
+            echo "🔍 Pre-deployment validation:"
+            echo "  - AWS credentials and permissions"
+            echo "  - S3 bucket accessibility"
+            echo "  - IAM role existence"
+            echo "  - ECR repository availability"
+            
+            python deployment/validate_environment.py \
+              --environment $ENVIRONMENT \
+              --pre-deployment-check \
+              --output-file "pre-deployment-validation-$ENVIRONMENT.json"
+            
+            REPORT_PATH="pre-deployment-validation-$ENVIRONMENT.json"
+            ;;
+            
+          "post-deployment")
+            echo "🔍 Post-deployment validation:"
+            echo "  - Lambda function deployment"
+            echo "  - Step Functions creation"
+            echo "  - EventBridge rule setup"
+            echo "  - Container image availability"
+            
+            python deployment/validate_environment.py \
+              --environment $ENVIRONMENT \
+              --post-deployment-check \
+              --output-file "post-deployment-validation-$ENVIRONMENT.json"
+            
+            REPORT_PATH="post-deployment-validation-$ENVIRONMENT.json"
+            ;;
+            
+          "integration")
+            echo "🔍 Integration validation:"
+            echo "  - End-to-end pipeline connectivity"
+            echo "  - Cross-service communication"
+            echo "  - Data flow validation"
+            echo "  - Performance benchmarks"
+            
+            python deployment/validate_environment.py \
+              --environment $ENVIRONMENT \
+              --complete-integration-check \
+              --output-file "integration-validation-$ENVIRONMENT.json"
+            
+            REPORT_PATH="integration-validation-$ENVIRONMENT.json"
+            ;;
+            
+          *)
+            echo "❌ Unknown validation type: $VALIDATION_TYPE"
+            exit 1
+            ;;
+        esac
+        
+        # Check validation result
+        if [ -f "$REPORT_PATH" ]; then
+          # Extract status from JSON (basic check)
+          if grep -q '"overall_status": true' "$REPORT_PATH" 2>/dev/null || \
+             grep -q '"validation_successful": true' "$REPORT_PATH" 2>/dev/null; then
+            echo "status=SUCCESS" >> $GITHUB_OUTPUT
+            echo "✅ Validation completed successfully"
+          else
+            echo "status=FAILED" >> $GITHUB_OUTPUT
+            echo "❌ Validation failed - check report for details"
+          fi
+          echo "report-path=$REPORT_PATH" >> $GITHUB_OUTPUT
+        else
+          echo "status=ERROR" >> $GITHUB_OUTPUT
+          echo "❌ Validation report not generated"
+          echo "report-path=" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Display validation summary
+      shell: bash
+      env:
+        VALIDATION_STATUS: ${{ steps.validate.outputs.status }}
+        REPORT_PATH: ${{ steps.validate.outputs.report-path }}
+      run: |
+        echo "=== VALIDATION SUMMARY ==="
+        echo "Environment: ${{ inputs.environment }}"
+        echo "Type: ${{ inputs.validation-type }}"
+        echo "Status: $VALIDATION_STATUS"
+        echo "Report: $REPORT_PATH"
+        echo "=========================="
+        
+        if [ "$VALIDATION_STATUS" = "SUCCESS" ]; then
+          echo "✅ All validation checks passed"
+        elif [ "$VALIDATION_STATUS" = "FAILED" ]; then
+          echo "❌ One or more validation checks failed"
+          if [ -f "$REPORT_PATH" ]; then
+            echo "📄 Validation report contains detailed error information"
+          fi
+        else
+          echo "⚠️ Validation encountered an error"
+        fi
