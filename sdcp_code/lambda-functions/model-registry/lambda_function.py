@@ -628,10 +628,6 @@ def predict_fn(input_data, model):
             median_pred = np.nanmedian(predictions)
             predictions = np.where(np.isnan(predictions), median_pred, predictions)
         
-        if (predictions < 0).any():
-            logger.warning("Some predictions are negative, clipping to zero")
-            predictions = np.maximum(predictions, 0)
-        
         logger.info(f"Enhanced prediction completed: {{len(predictions)}} predictions generated")
         logger.info(f"Prediction range: {{predictions.min():.4f}} to {{predictions.max():.4f}}")
         
@@ -719,11 +715,11 @@ def create_enhanced_sagemaker_model_archive(profile: str, model_info: Dict[str, 
             logger.info(f"Created enhanced inference script profile={safe_profile}")
             
             # Step 3: Create enhanced requirements.txt
-            requirements_content = """joblib>=1.1.0
+            requirements_content = """joblib==1.4.2
 scikit-learn==1.3.2
 xgboost==1.7.6
-numpy>=1.21.0
-pandas>=1.5.0
+numpy==1.24.1
+pandas==2.0.3
 """
             requirements_path = os.path.join(temp_dir, 'requirements.txt')
             with open(requirements_path, 'w') as f:
